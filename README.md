@@ -28,7 +28,21 @@ This bot is designed to run on Railway. Environment variables required:
 
 ## Local Development
 
-1. Clone the repository
-2. Install dependencies: `pip install -r requirements.txt`
-3. Copy `.env.example` to `.env` and add your bot token
-4. Run: `python main.py`
+1.  **Clone the repository**
+    ```bash
+    git clone [https://github.com/akhouriprakhar/price-monitor-bot.git](https://github.com/akhouriprakhar/price-monitor-bot.git)
+    ```
+2.  **Install dependencies**
+    ```bash
+    pip install -r requirements.txt
+    ```
+3.  **Create and configure the .env file** Create a new file in the project folder named `.env`. Open it and add the following lines, replacing the placeholder with your actual bot token:
+    ```
+    BOT_TOKEN=YOUR_BOT_TOKEN_FROM_BOTFATHER
+    PRICE_ALERT_THRESHOLD=5
+    CHECK_INTERVAL=60
+    ```
+4.  **Run the bot**
+    ```bash
+    python main.py
+    ```
