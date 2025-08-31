@@ -1,11 +1,17 @@
 import logging
-import asyncio
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
-from telegram import Update
-from telegram.ext import ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    filters,
+    ContextTypes,
+    CallbackQueryHandler
+)
 import re
 import signal
 import sys
+from urllib.parse import urlparse # <-- ADD THIS IMPORT
 from database import Database
 from scraper import ProductScraper
 from scheduler import PriceMonitor
@@ -18,119 +24,126 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# --- ADD THIS LIST OF SUPPORTED SITES ---
+SUPPORTED_DOMAINS = ('amazon.in', 'flipkart.com', 'myntra.com')
+# -----------------------------------------
+
 # Initialize components
 db = Database()
 scraper = ProductScraper()
 monitor = PriceMonitor()
 
 def is_product_url(text):
-    """Check if text contains a product URL"""
+    """Check if text contains a product URL."""
     url_pattern = r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
     return re.search(url_pattern, text) is not None
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /start command"""
-    welcome_message = """
-🔍 **Welcome to Price Monitor Bot!** I can help you track product prices and notify you of changes.
+    """Handle /start command with buttons and personalization."""
+    user_name = update.effective_user.first_name
+    welcome_message = f"""
+👋 **Hi {user_name}!**
 
-**How to use:**
-• Send me any product URL to start tracking
-• Use /list to see your tracked products  
-• Use /stop [number] to stop tracking a product
-• Use /help for more commands
+🔍 Welcome to the Price Monitor Bot! I can help you track product prices and notify you of changes.
 
-**Supported sites:** Amazon, Flipkart, Myntra, and more!
-
-Just send me a product link to get started! 🛒
+Just send me a product link to get started, or use the buttons below! 🛒
     """
-    await update.message.reply_text(welcome_message, parse_mode='Markdown')
+    keyboard = [
+        [InlineKeyboardButton("📦 List My Products", callback_data='list_products')],
+        [InlineKeyboardButton("📋 Get Help", callback_data='help')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(welcome_message, parse_mode='Markdown', reply_markup=reply_markup)
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /help command"""
+    """Handle /help command, works for both command and button."""
     help_text = """
 📋 **Available Commands:**
 
 • **/start** - Welcome message
 • **/help** - Show this help
 • **/list** - Show your tracked products
-• **/stop [number]** - Stop tracking a product
 
 **To track a product:**
 Just send me the product URL directly!
 
-**Examples:**
-• Amazon: https://amazon.in/dp/B08N5WRWNW
-• Flipkart: https://flipkart.com/product/...
-• Myntra: https://myntra.com/product/...
-
-I'll automatically detect the price and notify you of changes! 📈📉
+**To stop tracking:**
+Use the 'Stop' button next to an item in your /list.
     """
-    await update.message.reply_text(help_text, parse_mode='Markdown')
+    # This logic handles replies for both button clicks and direct commands
+    if update.callback_query:
+        await update.callback_query.message.reply_text(help_text, parse_mode='Markdown')
+    else:
+        await update.message.reply_text(help_text, parse_mode='Markdown')
 
 async def list_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /list command"""
-    user_id = update.effective_user.id
-    products = db.get_user_products(user_id)
-    
-    if not products:
-        await update.message.reply_text("You're not tracking any products yet! Send me a product URL to start.")
-        return
-    
-    message = "📦 **Your Tracked Products:**\n\n"
-    for i, product in enumerate(products, 1):
-        # product tuple structure from database.py: (id, title, initial_price, last_checked_price, url)
-        title = product[1] or "Unknown Product"
-        current_price = f"₹{product[3]:.2f}" if product[3] else "Price not found"
-        url = product[4]
-        
-        message += f"{i}. {title[:50]}...\n"
-        message += f"   💰 **Current Price:** {current_price}\n"
-        message += f"   🔗 [View Product]({url})\n\n"
-    
-    message += "Use `/stop [number]` to stop tracking a product."
-    await update.message.reply_text(message, parse_mode='Markdown', disable_web_page_preview=True)
+    """Handle /list command with interactive stop buttons."""
+    # This logic handles being called from a command or a button click
+    is_callback = update.callback_query is not None
+    user = update.effective_user
+    chat_id = update.effective_chat.id
 
-async def stop_tracking(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /stop command"""
-    user_id = update.effective_user.id
-    
-    if not context.args:
-        await update.message.reply_text("Please specify which product to stop tracking.\nExample: `/stop 1`", parse_mode='Markdown')
+    products = db.get_user_products(user.id)
+
+    if not products:
+        await context.bot.send_message(chat_id=chat_id, text="You're not tracking any products yet! Send me a product URL to start.")
         return
-    
-    try:
-        product_number = int(context.args[0])
-        products = db.get_user_products(user_id)
+
+    message = "📦 **Your Tracked Products:**"
+    keyboard = []
+    for i, product in enumerate(products, 1):
+        product_id, title, _, current_price_val, url = product
+        title = title or "Unknown Product"
+        current_price = f"₹{current_price_val:.2f}" if current_price_val else "N/A"
         
-        if 1 <= product_number <= len(products):
-            product_id = products[product_number - 1][0]
-            db.delete_product(user_id, product_id)
-            await update.message.reply_text(f"✅ Stopped tracking product #{product_number}")
-        else:
-            await update.message.reply_text("❌ Invalid product number. Use /list to see your products.")
-    except ValueError:
-        await update.message.reply_text("❌ Please enter a valid number. Example: `/stop 1`", parse_mode='Markdown')
+        product_text = f"{i}. {title[:35]}... ({current_price})"
+        keyboard.append([
+            InlineKeyboardButton(product_text, url=url),
+            InlineKeyboardButton("❌ Stop", callback_data=f'stop_{product_id}')
+        ])
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    # If it's a button click, edit the existing message. Otherwise, send a new one.
+    if is_callback:
+        try:
+            await update.callback_query.edit_message_text(text=message, parse_mode='Markdown', reply_markup=reply_markup, disable_web_page_preview=True)
+        except Exception as e: # Handle case where message is unchanged
+            logger.info(f"Could not edit message, sending new one: {e}")
+            await context.bot.send_message(chat_id=chat_id, text=message, parse_mode='Markdown', reply_markup=reply_markup, disable_web_page_preview=True)
+    else:
+        await context.bot.send_message(chat_id=chat_id, text=message, parse_mode='Markdown', reply_markup=reply_markup, disable_web_page_preview=True)
+
 
 async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle product URLs"""
+    """Handle product URLs."""
     user_id = update.effective_user.id
     url = update.message.text.strip()
     
     if not is_product_url(url):
         await update.message.reply_text("Please send a valid product URL.")
         return
+
+    # --- NEW: Check if the domain is supported ---
+    try:
+        domain = urlparse(url).netloc
+        if not any(supported_domain in domain for supported_domain in SUPPORTED_DOMAINS):
+            supported_sites_str = ", ".join(SUPPORTED_DOMAINS)
+            await update.message.reply_text(f"Sorry, I can only track products from these sites:\n{supported_sites_str}")
+            return
+    except Exception:
+        await update.message.reply_text("That link seems to be invalid. Please try another one.")
+        return
+    # ------------------------------------------
     
-    # Show processing message
     processing_msg = await update.message.reply_text("🔍 Analyzing product... Please wait.")
     
-    # Scrape product info
     product_info = scraper.get_product_info(url)
     
-    if not product_info or not product_info['price']:
-        await processing_msg.edit_text("❌ Sorry, I couldn't extract the price from this URL. Please try a different product.")
+    if not product_info or not product_info.get('price'):
+        await processing_msg.edit_text("❌ Sorry, I couldn't extract the product details from this URL. Please try a different one.")
         return
     
-    # Save to database
     db.add_product(user_id, url, product_info['title'], product_info['price'])
     
     success_message = f"""
@@ -145,39 +158,54 @@ Use /list to see all your tracked products.
     
     await processing_msg.edit_text(success_message, parse_mode='Markdown')
 
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles all button clicks."""
+    query = update.callback_query
+    await query.answer()
+
+    command, *data = query.data.split('_')
+
+    if command == 'list':
+        await list_products(query, context)
+    elif command == 'help':
+        await help_command(query, context)
+    elif command == 'stop':
+        user_id = query.effective_user.id
+        product_id = int(data[0])
+        db.delete_product(user_id, product_id)
+        # Refresh the product list automatically after deletion
+        await list_products(query, context)
+
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
-    """Log errors"""
+    """Log errors."""
     logger.error(f"Exception while handling an update: {context.error}")
 
 def signal_handler(signum, frame):
-    """Handle shutdown signals"""
+    """Handle shutdown signals."""
     logger.info("Received shutdown signal. Stopping bot...")
     monitor.stop_monitoring()
     sys.exit(0)
 
 def main():
-    """Run the bot with price monitoring"""
+    """Run the bot."""
     logger.info("🤖 Starting Price Monitor Bot...")
     
-    # Setup signal handlers
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
     
-    # Start price monitoring
     monitor.start_monitoring()
     
-    # Create application
     application = Application.builder().token(BOT_TOKEN).build()
     
-    # Add handlers
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("list", list_products))
-    application.add_handler(CommandHandler("stop", stop_tracking))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_url))
+    
+    application.add_handler(CallbackQueryHandler(button_handler))
+
     application.add_error_handler(error_handler)
     
-    # Start the bot
     logger.info("🚀 Price Monitor Bot is running!")
     logger.info("📊 Price monitoring is active!")
     application.run_polling(drop_pending_updates=True)
