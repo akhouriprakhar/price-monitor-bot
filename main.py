@@ -78,9 +78,14 @@ async def list_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     message = "📦 **Your Tracked Products:**\n\n"
     for i, product in enumerate(products, 1):
+        # product tuple structure from database.py: (id, title, initial_price, last_checked_price, url)
         title = product[1] or "Unknown Product"
-        price = f"₹{product[3]:.2f}" if product[3] else "Price not found"
-        message += f"{i}. {title[:50]}...\n   💰 {price}\n   🔗 [View Product]({product[4]})\n\n"
+        current_price = f"₹{product[3]:.2f}" if product[3] else "Price not found"
+        url = product[4]
+        
+        message += f"{i}. {title[:50]}...\n"
+        message += f"   💰 **Current Price:** {current_price}\n"
+        message += f"   🔗 [View Product]({url})\n\n"
     
     message += "Use `/stop [number]` to stop tracking a product."
     await update.message.reply_text(message, parse_mode='Markdown', disable_web_page_preview=True)
