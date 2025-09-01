@@ -26,7 +26,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 SUPPORTED_DOMAINS = ('amazon.in', 'flipkart.com', 'myntra.com')
-ADMIN_CHAT_ID = 5682929226  # <-- IMPORTANT: Replace with your numeric Telegram chat ID
+ADMIN_CHAT_ID = 5682929226 # <-- IMPORTANT: Replace with your numeric Telegram chat ID
 
 # --- State definitions for conversations ---
 SET_PRICE, FEEDBACK = range(2)
@@ -67,6 +67,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 • **/feedback:** Send a message directly to my developer for suggestions or bug reports.
     """
+    # This logic handles replies for both button clicks and direct commands
     if update.callback_query:
         await update.callback_query.message.reply_text(help_text, parse_mode='Markdown')
     else:
@@ -146,14 +147,14 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     product_id = db.add_product(user_id, url, product_info['title'], product_info['price'])
     
     if product_id is None:
-        await processing_msg.edit_text("❌ An error occurred while adding the product to the database.")
+        await processing_msg.edit_message_text("❌ An error occurred while adding the product to the database.")
         return
 
     success_message = f"✅ **Now Tracking!**\n\n**Product:** {product_info['title']}\n**Current Price:** ₹{product_info['price']:.2f}"
     keyboard = [[InlineKeyboardButton("🎯 Set a Target Price", callback_data=f'askprice_{product_id}')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await processing_msg.edit_text(success_message, parse_mode='Markdown', reply_markup=reply_markup)
+    await processing_msg.edit_message_text(success_message, parse_mode='Markdown', reply_markup=reply_markup)
 
 # --- Conversation Flow Handlers ---
 
@@ -256,17 +257,18 @@ def main():
     )
 
     # --- CORRECT HANDLER ORDER ---
-    # 1. Add ConversationHandlers first, so they can capture text inputs.
-    application.add_handler(set_price_conv)
-    application.add_handler(feedback_conv)
-
-    # 2. Add regular command handlers.
+    # 1. Add regular command handlers.
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("list", list_products))
     
+    # 2. Add ConversationHandlers. These need to be before other text/button handlers.
+    application.add_handler(set_price_conv)
+    application.add_handler(feedback_conv)
+    
     # 3. Add the generic button router for non-conversation buttons.
-    application.add_handler(CallbackQueryHandler(button_router))
+    # This pattern ensures it doesn't conflict with the conversation entry points.
+    application.add_handler(CallbackQueryHandler(button_router, pattern='^(list_products|help|stop_)'))
 
     # 4. Add the generic message handler LAST. This is the catch-all for URLs.
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_url))
