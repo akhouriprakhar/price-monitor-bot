@@ -7,23 +7,20 @@ logger = logging.getLogger(__name__)
 
 class ProductScraper:
     def __init__(self):
-        """Initializes the scraper with standard headers."""
         self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36',
             'Accept-Language': 'en-US,en;q=0.9',
             'Accept-Encoding': 'gzip, deflate, br',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
-            'Connection': 'keep-alive'
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'Connection': 'keep-alive',
+            'DNT': '1'
         }
 
     def get_product_info(self, url):
-        """
-        Fetches product information (title and price) from a given URL.
-        Returns a dictionary with 'title' and 'price' or None on failure.
-        """
+        """Fetches product information (title and price) from a given URL."""
         try:
-            response = requests.get(url, headers=self.headers, timeout=10)
-            response.raise_for_status()  # Raise an exception for bad status codes
+            response = requests.get(url, headers=self.headers, timeout=15)
+            response.raise_for_status()
             soup = BeautifulSoup(response.content, 'lxml')
 
             title = self._extract_title(soup)
@@ -44,31 +41,31 @@ class ProductScraper:
             return None
 
     def _extract_title(self, soup):
-        """Extracts the product title from the page soup."""
-        # Try common tags and IDs for product titles
-        title_selectors = ['#productTitle', 'h1.product-title', '.B_NuCI', '.pdp-title']
+        """Extracts the product title using a list of potential selectors."""
+        title_selectors = [
+            '#productTitle', '.B_NuCI', '.pdp-title', '.product-title', 
+            'h1', 'span[data-ui="product-title"]'
+        ]
         for selector in title_selectors:
-            title_element = soup.select_one(selector)
-            if title_element:
-                return title_element.get_text(strip=True)
+            element = soup.select_one(selector)
+            if element:
+                return element.get_text(strip=True)
         return "Product Title Not Found"
 
     def _extract_price(self, soup):
-        """Extracts and cleans the product price from the page soup."""
-        # Try common classes and IDs for prices
+        """Extracts and cleans the product price using a list of potential selectors."""
         price_selectors = [
-            '.a-price-whole', '.a-offscreen', '._30jeq3',
-            'span.price', '.product-price', '.pdp-price'
+            '.a-price-whole', '._30jeq3', '.pdp-price', '.product-price', 
+            '.a-offscreen', 'span.price', 'span[data-testid="price"]'
         ]
         for selector in price_selectors:
-            price_element = soup.select_one(selector)
-            if price_element:
-                price_text = price_element.get_text(strip=True)
-                # Clean the price string (remove symbols, commas)
+            element = soup.select_one(selector)
+            if element:
+                price_text = element.get_text(strip=True)
                 cleaned_price = re.sub(r'[^\d.]', '', price_text)
                 if cleaned_price:
                     try:
                         return float(cleaned_price)
                     except ValueError:
-                        continue # Try next selector if conversion fails
+                        continue
         return None
