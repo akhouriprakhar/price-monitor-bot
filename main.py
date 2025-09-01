@@ -182,8 +182,12 @@ async def save_target_price(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     return ConversationHandler.END
 
 async def ask_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Starts the conversation for user feedback."""
-    await update.callback_query.message.reply_text("Please type your feedback, and I'll send it to my developer.\nType /cancel to abort.")
+    """Starts the conversation for user feedback (works for commands and buttons)."""
+    message_text = "Please type your feedback, and I'll send it to my developer.\nType /cancel to abort."
+    if update.callback_query:
+        await update.callback_query.message.reply_text(message_text)
+    else:
+        await update.message.reply_text(message_text)
     return FEEDBACK
 
 async def save_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -243,20 +247,29 @@ def main():
 
     # Conversation handler for feedback
     feedback_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(ask_feedback, pattern='^feedback$')],
+        entry_points=[
+            CallbackQueryHandler(ask_feedback, pattern='^feedback$'),
+            CommandHandler('feedback', ask_feedback)
+        ],
         states={FEEDBACK: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_feedback)]},
         fallbacks=[CommandHandler('cancel', cancel_conversation)],
     )
 
+    # --- CORRECT HANDLER ORDER ---
+    # 1. Add ConversationHandlers first, so they can capture text inputs.
+    application.add_handler(set_price_conv)
+    application.add_handler(feedback_conv)
+
+    # 2. Add regular command handlers.
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("list", list_products))
-    application.add_handler(CommandHandler("feedback", ask_feedback)) # Allow command too
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_url))
     
-    application.add_handler(set_price_conv)
-    application.add_handler(feedback_conv)
-    application.add_handler(CallbackQueryHandler(button_router)) # Handles non-conversation buttons
+    # 3. Add the generic button router for non-conversation buttons.
+    application.add_handler(CallbackQueryHandler(button_router))
+
+    # 4. Add the generic message handler LAST. This is the catch-all for URLs.
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_url))
     
     monitor.start_monitoring()
     logger.info("🚀 Price Monitor Bot is running!")
