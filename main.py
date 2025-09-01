@@ -26,7 +26,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 SUPPORTED_DOMAINS = ('amazon.in', 'flipkart.com', 'myntra.com')
-ADMIN_CHAT_ID = "YOUR_OWN_TELEGRAM_CHAT_ID"  # <-- IMPORTANT: Replace with your numeric Telegram chat ID
+ADMIN_CHAT_ID = 5682929226  # <-- IMPORTANT: Replace with your numeric Telegram chat ID
 
 # --- State definitions for conversations ---
 SET_PRICE, FEEDBACK = range(2)
