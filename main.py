@@ -26,7 +26,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 SUPPORTED_DOMAINS = ('amazon.in', 'flipkart.com', 'myntra.com')
-ADMIN_CHAT_ID = 5682929226 # <-- IMPORTANT: Replace with your numeric Telegram chat ID
+ADMIN_CHAT_ID = 5682929226  # <-- IMPORTANT: Replace with your numeric Telegram chat ID
 
 # --- State definitions for conversations ---
 SET_PRICE, FEEDBACK = range(2)
@@ -267,8 +267,8 @@ def main():
     application.add_handler(feedback_conv)
     
     # 3. Add the generic button router for non-conversation buttons.
-    # This pattern ensures it doesn't conflict with the conversation entry points.
-    application.add_handler(CallbackQueryHandler(button_router, pattern='^(list_products|help|stop_)'))
+    # This pattern now correctly captures stop buttons with product IDs.
+    application.add_handler(CallbackQueryHandler(button_router, pattern=r'^(list_products|help|stop_\d+)'))
 
     # 4. Add the generic message handler LAST. This is the catch-all for URLs.
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_url))
